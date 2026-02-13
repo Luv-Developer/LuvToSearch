@@ -1,0 +1,387 @@
+       /* ----- CSS RESET & GLOBAL ----- */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', sans-serif;
+            transition: background-color 0.3s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        body {
+            min-height: 100vh;
+            width: 100vw;
+            overflow-x: hidden;
+            background-color: #faf7f2; /* warm light fallback */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+        }
+
+        /* ----- FULL-SCREEN COVER LAYOUT ----- */
+        .full-cover {
+            position: relative;
+            width: 100%;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background: #ffffff; /* will be overridden by theme */
+            transition: background 0.25s;
+        }
+
+        /* ----- BLACK & WHITE THEME (default: LIGHT monochrome) ----- */
+        .theme-light {
+            background: #f8f6f4;
+            color: #1e1e1e;
+        }
+        .theme-light .glass-panel {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            box-shadow: 0 20px 35px -12px rgba(0,0,0,0.05);
+        }
+        .theme-light .btn-google {
+            background: #1e1e1e;
+            color: white;
+            border: 1px solid #2a2a2a;
+        }
+        .theme-light .btn-google i {
+            color: white;
+        }
+        .theme-light .btn-google:hover {
+            background: #2d2d2d;
+        }
+        .theme-light .card-question {
+            background: white;
+            border: 1px solid #d4d4d4;
+            color: #1e1e1e;
+        }
+        .theme-light .web-card {
+            background: white;
+            border: 1px solid #d0d0d0;
+            color: #1e1e1e;
+        }
+        .theme-light .answer-console {
+            background: rgba(0, 0, 0, 0.02);
+            border-left: 5px solid #1e1e1e;
+        }
+        .theme-light .dynamic-query {
+            background: #eaeaea;
+            color: #121212;
+        }
+
+        /* ----- DARK THEME (monochrome inverted) ----- */
+        .theme-dark {
+            background: #0c0c0c;
+            color: #f1f1f1;
+        }
+        .theme-dark .glass-panel {
+            background: rgba(20, 20, 20, 0.8);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 20px 35px -12px rgba(0,0,0,0.7);
+        }
+        .theme-dark .btn-google {
+            background: #f0f0f0;
+            color: #0a0a0a;
+            border: 1px solid #7a7a7a;
+        }
+        .theme-dark .btn-google i {
+            color: #0a0a0a;
+        }
+        .theme-dark .btn-google:hover {
+            background: #d6d6d6;
+        }
+        .theme-dark .card-question {
+            background: #1a1a1a;
+            border: 1px solid #3a3a3a;
+            color: #ececec;
+        }
+        .theme-dark .web-card {
+            background: #1e1e1e;
+            border: 1px solid #3c3c3c;
+            color: #efefef;
+        }
+        .theme-dark .answer-console {
+            background: rgba(255, 255, 255, 0.02);
+            border-left: 5px solid #b1b1b1;
+        }
+        .theme-dark .dynamic-query {
+            background: #2c2c2c;
+            color: #f0f0f0;
+        }
+
+        /* ----- HEADER: FULL WIDTH, TOP BAR ----- */
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1.4rem 2.8rem;
+            width: 100%;
+            flex-wrap: wrap;
+            gap: 1.2rem;
+            border-bottom: 1px solid rgba(128, 128, 128, 0.15);
+        }
+
+        .logo-area {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .heart-icon {
+            font-size: 2.2rem;
+            color: currentColor;
+            filter: drop-shadow(0 0 4px rgba(0,0,0,0.1));
+        }
+
+        .app-name {
+            font-size: 2rem;
+            font-weight: 650;
+            letter-spacing: -0.02em;
+            color: currentColor;
+        }
+        .app-name span {
+            font-weight: 300;
+            opacity: 0.9;
+        }
+
+        /* ----- THEME TOGGLE (BLACK & WHITE SWITCH) ----- */
+        .theme-toggle {
+            background: transparent;
+            border: 1.5px solid currentColor;
+            border-radius: 60px;
+            padding: 0.6rem 1.4rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 550;
+            font-size: 0.95rem;
+            color: currentColor;
+            cursor: pointer;
+            transition: 0.2s;
+            background: rgba(128, 128, 128, 0.05);
+            backdrop-filter: blur(4px);
+        }
+        .theme-toggle i {
+            font-size: 1.1rem;
+        }
+        .theme-toggle:hover {
+            background: rgba(128, 128, 128, 0.15);
+        }
+
+        /* GOOGLE BUTTON — always visible on top right */
+        .btn-google {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border: none;
+            padding: 0.7rem 1.8rem;
+            border-radius: 40px;
+            font-weight: 550;
+            font-size: 1rem;
+            backdrop-filter: blur(8px);
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+
+        /* ----- MAIN GRID (FULL SCREEN CONTENT) WITHOUT SEARCH BAR ----- */
+        .main-grid {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 2rem 2.8rem 2.5rem;
+            width: 100%;
+        }
+
+        /* TAGLINE / SUBHEADER */
+        .quest-remark {
+            font-size: 1.2rem;
+            font-weight: 330;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 2.2rem;
+            padding: 0.6rem 1.8rem;
+            border-radius: 60px;
+            width: fit-content;
+            backdrop-filter: blur(4px);
+            border: 1px solid rgba(128,128,128,0.2);
+            color: currentColor;
+        }
+
+        /* 2-COLUMN LAYOUT FOR FUNCTIONALITIES: LEFT: QUESTION CARDS, RIGHT: ANSWER & WEB APPS */
+        .functionality-dash {
+            display: grid;
+            grid-template-columns: 1fr 1.2fr;
+            gap: 2.4rem;
+            align-items: start;
+            width: 100%;
+        }
+
+        /* ----- LEFT PANEL: QUESTION PRESETS (FUNCTIONALITIES WITHOUT SEARCH BAR) ----- */
+        .question-bank {
+            display: flex;
+            flex-direction: column;
+            gap: 1.6rem;
+        }
+
+        .section-label {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 1.3rem;
+            font-weight: 540;
+            margin-bottom: 0.2rem;
+        }
+
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+            gap: 1.2rem;
+        }
+
+        .card-question {
+            padding: 1.5rem 1rem;
+            border-radius: 28px;
+            backdrop-filter: blur(8px);
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 14px;
+            cursor: pointer;
+            transition: 0.2s ease;
+            box-shadow: 0 6px 12px rgba(0,0,0,0.02);
+        }
+        .card-question:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 16px 24px -8px rgba(0,0,0,0.15);
+            border-color: #888;
+        }
+        .card-question i {
+            font-size: 1.7rem;
+            opacity: 0.8;
+        }
+        .card-question span {
+            font-size: 1.1rem;
+            font-weight: 500;
+            line-height: 1.3;
+        }
+
+        /* ----- RIGHT PANEL: ANSWER + WEBSITES/APPS (DYNAMIC) ----- */
+        .right-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+
+        .answer-console {
+            padding: 1.8rem 2rem;
+            border-radius: 28px;
+            backdrop-filter: blur(12px);
+            width: 100%;
+            transition: all 0.2s;
+        }
+
+        .mini-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 550;
+            margin-bottom: 1.2rem;
+            font-size: 1.1rem;
+        }
+
+        #answerText {
+            font-size: 1.1rem;
+            line-height: 1.6;
+            font-weight: 350;
+            word-break: break-word;
+        }
+
+        .dynamic-query {
+            display: inline-block;
+            padding: 0.2rem 0.9rem;
+            border-radius: 60px;
+            font-weight: 550;
+            margin-top: 0.8rem;
+            background: rgba(0,0,0,0.05);
+        }
+
+        /* web apps grid — full width */
+        .web-gateways {
+            width: 100%;
+        }
+        .web-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 1.2rem;
+            margin-top: 1rem;
+        }
+        .web-card {
+            padding: 1.2rem 0.8rem;
+            border-radius: 20px;
+            text-align: center;
+            backdrop-filter: blur(12px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            text-decoration: none;
+            transition: 0.2s;
+            border: 1px solid rgba(128,128,128,0.2);
+            cursor: pointer;
+        }
+        .web-card:hover {
+            transform: translateY(-6px);
+            border-color: #6b6b6b;
+            background: rgba(255,255,255,0.1);
+        }
+        .web-card i {
+            font-size: 2rem;
+        }
+
+        /* cosmic footer */
+        .cosmic-footer {
+            margin-top: 2.8rem;
+            text-align: center;
+            color: currentColor;
+            opacity: 0.7;
+            font-size: 0.9rem;
+            border-top: 1px solid rgba(128,128,128,0.2);
+            padding-top: 1.8rem;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        /* RESPONSIVE */
+        @media (max-width: 900px) {
+            .functionality-dash {
+                grid-template-columns: 1fr;
+                gap: 2rem;
+            }
+            .top-bar {
+                padding: 1.2rem 1.8rem;
+            }
+            .main-grid {
+                padding: 1.6rem 1.8rem;
+            }
+        }
+        @media (max-width: 550px) {
+            .top-bar {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .app-name { font-size: 1.8rem; }
+        }
+
+        /* additional animations */
+        .fade-in {
+            animation: fadeSlide 0.4s ease;
+        }
+        @keyframes fadeSlide {
+            0% { opacity: 0.7; transform: translateY(5px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
