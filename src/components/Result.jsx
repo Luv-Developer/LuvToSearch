@@ -27,7 +27,7 @@ const Result = () => {
         const getData = async () => {
             try {
                 setLoading(true);
-                const response = await axios.get(`/api/v1/search?api_key=${api}&engine=google&q=${search}`);
+                const response = await axios.get(`https://www.searchapi.io/api/v1/search?api_key=${api}&engine=google&q=${search}`);
                 console.log(response.data);
                 
 
