@@ -1,8 +1,39 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 import "./Result.css";
 import { supabase } from "../../SupabaseClient";
+
+// Cache utility to reduce API calls
+const cache = new Map();
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+// Rate limiter utility
+class RateLimiter {
+    constructor(maxRequestsPerMinute = 20) {
+        this.maxRequests = maxRequestsPerMinute;
+        this.requests = [];
+    }
+
+    async waitForSlot() {
+        const now = Date.now();
+        const oneMinuteAgo = now - 60000;
+        
+        // Clean up old requests
+        this.requests = this.requests.filter(time => time > oneMinuteAgo);
+        
+        if (this.requests.length >= this.maxRequests) {
+            const oldestRequest = this.requests[0];
+            const waitTime = 60000 - (now - oldestRequest);
+            console.log(`Rate limit approaching. Waiting ${Math.ceil(waitTime/1000)}s...`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+        }
+        
+        this.requests.push(Date.now());
+    }
+}
+
+const rateLimiter = new RateLimiter(15); // 15 requests per minute (conservative)
 
 const Result = () => {
     const { search } = useParams();
@@ -12,57 +43,120 @@ const Result = () => {
     // State management
     const [isDark, setIsDark] = useState(false);
     const [searchTopic, setSearchTopic] = useState(`"${search || 'monochrome ui'}"`);
-    const [resultCount, setResultCount] = useState('128');
+    const [resultCount, setResultCount] = useState('0');
     const [results, setResults] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [answer, setAnswer] = useState("");
     const [videos, setVideos] = useState([]);
     const [lines, setLines] = useState("");
+    const [error, setError] = useState(null);
+    const [retryCount, setRetryCount] = useState(0);
     
     const coverRef = useRef(null);
     const themeBtnRef = useRef(null);
 
+    // Fetch with exponential backoff
+    const fetchWithRetry = useCallback(async (searchQuery, retries = 3) => {
+        const cacheKey = searchQuery;
+        const cached = cache.get(cacheKey);
+        
+        // Return cached data if valid
+        if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+            console.log("Returning cached data for:", searchQuery);
+            return cached.data;
+        }
+
+        for (let i = 0; i < retries; i++) {
+            try {
+                // Wait for rate limiter slot
+                await rateLimiter.waitForSlot();
+                
+                const response = await axios.get(`https://www.searchapi.io/api/v1/search`, {
+                    params: {
+                        api_key: api,
+                        engine: 'google',
+                        q: searchQuery
+                    },
+                    timeout: 10000 // 10 second timeout
+                });
+                
+                // Cache the response
+                cache.set(cacheKey, {
+                    data: response.data,
+                    timestamp: Date.now()
+                });
+                
+                return response.data;
+            } catch (err) {
+                if (err.response?.status === 429 && i < retries - 1) {
+                    // Get retry time from header or use exponential backoff
+                    const retryAfter = err.response.headers['retry-after'] 
+                        ? parseInt(err.response.headers['retry-after']) * 1000 
+                        : Math.pow(2, i) * 2000; // Exponential: 2s, 4s, 8s
+                    
+                    console.log(`Rate limited. Retry ${i + 1}/${retries - 1} in ${retryAfter/1000}s...`);
+                    await new Promise(resolve => setTimeout(resolve, retryAfter));
+                    continue;
+                }
+                throw err;
+            }
+        }
+        throw new Error("Max retries exceeded");
+    }, [api]);
+
     // Fetch data from API
     useEffect(() => {
+        let isMounted = true;
+
         const getData = async () => {
+            if (!search) return;
+            
             try {
                 setLoading(true);
-                const response = await axios.get(`https://www.searchapi.io/api/v1/search?api_key=${api}&engine=google&q=${search}`);
-                console.log(response.data);
+                setError(null);
                 
-
-                setVideos(response.data.inline_videos || []);
+                const data = await fetchWithRetry(search);
                 
-                if (response.data.ai_overview?.text_blocks?.[0]?.answer) {
-                    setLines(response.data.ai_overview.text_blocks[0].answer);
+                if (!isMounted) return;
+                
+                console.log("API Response:", data);
+                
+                // Safely set videos
+                setVideos(data.inline_videos || []);
+                
+                // Safely set AI overview
+                if (data.ai_overview?.text_blocks?.[0]?.answer) {
+                    setLines(data.ai_overview.text_blocks[0].answer);
                 }
                 
                 // Safely set results
-                setResults(response.data.organic_results || []);
+                const organicResults = data.organic_results || [];
+                setResults(organicResults);
+                setResultCount(organicResults.length.toString());
                 
-                // Generate a summary answer based on search results
-                if (response.data.organic_results && response.data.organic_results.length > 0) {
-                    generateAnswerFromResults(response.data.organic_results);
-                }
-            
                 setLoading(false);
             } catch (err) {
-                console.log(`Error: ${err}`);
+                if (!isMounted) return;
+                
+                console.error(`Error fetching data:`, err);
+                
+                if (err.response?.status === 429) {
+                    setError("Too many requests. Please wait a moment and try again.");
+                } else if (err.code === 'ECONNABORTED') {
+                    setError("Request timed out. Please check your connection.");
+                } else {
+                    setError(err.message || "Failed to fetch results");
+                }
+                
                 setLoading(false);
             }
         };
-        getData();
-    }, [search]);
 
-    // Generate answer from results
-    const generateAnswerFromResults = (results) => {
-        // This is a simplified version - in production, you might use an AI API
-        const firstResult = results[0];
-        const summary = `Based on your search for "${search}", we found that ${firstResult.snippet || firstResult.description || 'this topic has several interesting aspects'}. 
-        According to ${firstResult.source || firstResult.link}, the key points include: ${firstResult.title}. 
-        For more detailed information, explore the results below.`;
-        setAnswer(summary);
-    };
+        getData();
+        
+        return () => {
+            isMounted = false;
+        };
+    }, [search, fetchWithRetry]);
 
     const signOut = async() => {
         await supabase.auth.signOut();
@@ -87,7 +181,7 @@ const Result = () => {
     // Handle video click with safety check
     const handleVideoClick = (video) => {
         if (video?.link) {
-            window.location.href = video.link;
+            window.open(video.link, '_blank', 'noopener,noreferrer');
         }
     };
 
@@ -110,13 +204,6 @@ const Result = () => {
         }
     }, [isDark]);
 
-    // Update result count when results change
-    useEffect(() => {
-        if (results.length > 0) {
-            setResultCount(results.length.toString());
-        }
-    }, [results]);
-
     // Show loading state
     if (loading) {
         return (
@@ -129,6 +216,50 @@ const Result = () => {
                 <div style={{ textAlign: 'center' }}>
                     <i className="fas fa-spinner fa-spin" style={{ fontSize: '3rem', marginBottom: '1rem' }}></i>
                     <p>Loading results for "{search}"...</p>
+                </div>
+            </div>
+        );
+    }
+
+    // Show error state
+    if (error) {
+        return (
+            <div className={`full-cover ${isDark ? 'theme-dark' : 'theme-light'}`} style={{ 
+                display: 'flex', 
+                justifyContent: 'center', 
+                alignItems: 'center',
+                minHeight: '100vh'
+            }}>
+                <div style={{ textAlign: 'center', maxWidth: '500px', padding: '2rem' }}>
+                    <i className="fas fa-exclamation-triangle" style={{ fontSize: '3rem', color: '#ff6b6b', marginBottom: '1rem' }}></i>
+                    <h2>Error Loading Results</h2>
+                    <p style={{ marginTop: '1rem', opacity: 0.8 }}>{error}</p>
+                    <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', marginTop: '2rem' }}>
+                        <button 
+                            onClick={() => window.location.reload()}
+                            style={{
+                                padding: '0.8rem 2rem',
+                                borderRadius: '30px',
+                                border: '1px solid currentColor',
+                                background: 'transparent',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            Retry
+                        </button>
+                        <button 
+                            onClick={back}
+                            style={{
+                                padding: '0.8rem 2rem',
+                                borderRadius: '30px',
+                                border: '1px solid currentColor',
+                                background: 'transparent',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            Go Back
+                        </button>
+                    </div>
                 </div>
             </div>
         );
@@ -149,17 +280,14 @@ const Result = () => {
                             <span className="brand-name">Luv<span>ToSearch</span></span>
                         </div>
                         <div className="button-group">
-                            {/* 1. THEME BUTTON */}
                             <button className="top-btn" id="themeToggleBtn" ref={themeBtnRef} onClick={toggleTheme}>
                                 <i className="fas fa-adjust"></i>
                                 <span>black & white</span>
                             </button>
-                            {/* 2. BACK BUTTON */}
                             <button className="top-btn" id="backBtn" onClick={back}>
                                 <i className="fas fa-arrow-left"></i>
                                 <span>back to Search</span>
                             </button>
-                            {/* 3. SIGN OUT BUTTON */}
                             <button className="top-btn" id="signOutBtn" onClick={signOut}>
                                 <i className="fas fa-sign-out-alt"></i>
                                 <span>sign out</span>
@@ -174,13 +302,12 @@ const Result = () => {
                             <span className="searched-topic" id="searchTopic">{searchTopic}</span>
                             <span className="result-stats" id="resultStats">· {resultCount} results</span>
                         </div>
-
                         <div style={{ marginTop: '0.4rem', opacity: 0.7, fontSize: '0.95rem' }}>
                             <i className="fas fa-sparkle" style={{ marginRight: '6px' }}></i> results crafted with intention
                         </div>
                     </div>
 
-                    {/* ANSWER PARAGRAPH - Only show if lines exists */}
+                    {/* ANSWER PARAGRAPH */}
                     {lines && (
                         <div className="answer-section" style={{ 
                             marginBottom: '2rem',
@@ -194,29 +321,16 @@ const Result = () => {
                                 <i className="fas fa-robot" style={{ fontSize: '1.3rem', opacity: 0.8 }}></i>
                                 <h3 style={{ fontSize: '1.2rem', fontWeight: 600 }}>AI Summary</h3>
                             </div>
-                            <p style={{ 
-                                fontSize: '1rem', 
-                                lineHeight: '1.7',
-                                opacity: 0.9,
-                                margin: 0
-                            }}>
+                            <p style={{ fontSize: '1rem', lineHeight: '1.7', opacity: 0.9, margin: 0 }}>
                                 {lines}
                             </p>
                         </div>
                     )}
 
-                    {/* VIDEO CONTAINERS - Only show if videos exist */}
+                    {/* VIDEO CONTAINERS */}
                     {videos && videos.length > 0 && (
-                        <div className="video-section" style={{ 
-                            marginBottom: '2.5rem',
-                            width: '100%'
-                        }}>
-                            <div style={{ 
-                                display: 'flex', 
-                                alignItems: 'center', 
-                                gap: '10px', 
-                                marginBottom: '1.2rem' 
-                            }}>
+                        <div className="video-section" style={{ marginBottom: '2.5rem', width: '100%' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '1.2rem' }}>
                                 <i className="fas fa-video" style={{ fontSize: '1.3rem' }}></i>
                                 <h3 style={{ fontSize: '1.2rem', fontWeight: 600 }}>Video Resources</h3>
                             </div>
@@ -226,106 +340,38 @@ const Result = () => {
                                 gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
                                 gap: '1.5rem'
                             }}>
-                                {/* Video Card 1 - with safety check */}
-                                {videos[0] && (
-                                    <div className="video-card glass-panel" style={{
+                                {videos.slice(0, 3).map((video, index) => (
+                                    <div key={index} className="video-card glass-panel" style={{
                                         padding: '1.2rem',
                                         borderRadius: '20px',
                                         transition: 'transform 0.2s',
                                         cursor: 'pointer',
                                         border: '1px solid rgba(128,128,128,0.2)'
-                                    }} onClick={()=>{
-                                        window.location.href = videos[0].link
-                                    }}>
+                                    }} onClick={() => handleVideoClick(video)}>
                                         <div style={{
                                             width: '100%',
                                             height: '160px',
-                                            backgroundImage: videos[0].image ? `url(${videos[0].image})` : 'linear-gradient(145deg, #2a2a2a, #3a3a3a)',
+                                            backgroundImage: video.image ? `url(${video.image})` : 'linear-gradient(145deg, #2a2a2a, #3a3a3a)',
+                                            backgroundSize: 'cover',
+                                            backgroundPosition: 'center',
                                             borderRadius: '12px',
                                             marginBottom: '1rem',
                                             display: 'flex',
                                             alignItems: 'center',
                                             justifyContent: 'center',
-                                            fontSize: '3rem'
+                                            fontSize: '3rem',
+                                            color: '#fff'
                                         }}>
                                             <i className="fas fa-play-circle"></i>
                                         </div>
                                         <h4 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.3rem' }}>
-                                            {videos[0].title || 'Video Title'}
+                                            {video.title || 'Video Title'}
                                         </h4>
                                         <p style={{ fontSize: '0.85rem', opacity: 0.7 }}>
-                                            {videos[0].source || 'YouTube'} · {videos[0].length || '10'} min
+                                            {video.source || 'YouTube'} · {video.length || '10'} min
                                         </p>
                                     </div>
-                                )}
-
-                                {/* Video Card 2 - with safety check */}
-                                {videos[1] && (
-                                    <div className="video-card glass-panel" style={{
-                                        padding: '1.2rem',
-                                        borderRadius: '20px',
-                                        transition: 'transform 0.2s',
-                                        cursor: 'pointer',
-                                        border: '1px solid rgba(128,128,128,0.2)'
-                                    }} onClick={()=>{
-                                        window.location.href = videos[1].link
-                                    }}>
-                                        <div style={{
-                                            width: '100%',
-                                            height: '160px',
-                                            backgroundImage: videos[1].image ? `url(${videos[1].image})` : 'linear-gradient(145deg, #2a2a2a, #3a3a3a)',
-                                            borderRadius: '12px',
-                                            marginBottom: '1rem',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            color: '#fff',
-                                            fontSize: '3rem'
-                                        }}>
-                                            <i className="fas fa-play-circle"></i>
-                                        </div>
-                                        <h4 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.3rem' }}>
-                                            {videos[1].title || 'Video Title'}
-                                        </h4>
-                                        <p style={{ fontSize: '0.85rem', opacity: 0.7 }}>
-                                            {'YouTube'} · {videos[1].length || '10'} min
-                                        </p>
-                                    </div>
-                                )}
-
-                                {/* Video Card 3 - with safety check */}
-                                {videos[2] && (
-                                    <div className="video-card glass-panel" style={{
-                                        padding: '1.2rem',
-                                        borderRadius: '20px',
-                                        transition: 'transform 0.2s',
-                                        cursor: 'pointer',
-                                        border: '1px solid rgba(128,128,128,0.2)'
-                                    }} onClick={()=>{
-                                        window.location.href = videos[2].link
-                                    }}>
-                                        <div style={{
-                                            width: '100%',
-                                            height: '160px',
-                                            backgroundImage: videos[2].image ? `url(${videos[2].image})` : 'linear-gradient(145deg, #2a2a2a, #3a3a3a)',
-                                            borderRadius: '12px',
-                                            marginBottom: '1rem',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            color: '#fff',
-                                            fontSize: '3rem'
-                                        }}>
-                                            <i className="fas fa-play-circle"></i>
-                                        </div>
-                                        <h4 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.3rem' }}>
-                                            {videos[2].title || 'Video Title'}
-                                        </h4>
-                                        <p style={{ fontSize: '0.85rem', opacity: 0.7 }}>
-                                            {'YouTube'} · {videos[2].length || '10'} min
-                                        </p>
-                                    </div>
-                                )}
+                                ))}
                             </div>
                         </div>
                     )}
@@ -338,6 +384,7 @@ const Result = () => {
                                     <a 
                                         className="result-link" 
                                         style={{ cursor: 'pointer' }}
+                                        onClick={(e) => handleResultClick(e, result.link)}
                                     >
                                         {result.title}
                                     </a>
